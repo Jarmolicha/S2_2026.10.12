@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Landsat 8 • Kraków i okolice</title><link rel="stylesheet" href="vendor/leaflet.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 *{box-sizing:border-box}body{margin:0;font:16px system-ui,sans-serif;color:#173541;background:#f5f7f6}header{padding:16px 24px;background:#133e4a;color:white}h1{font-size:24px;margin:0 0 4px}header p{margin:0;font-size:14px;color:#d8e7e8}main{display:grid;grid-template-columns:1fr 280px;height:calc(100vh - 89px);min-height:450px}#map{height:100%;background:#e6eceb}aside{padding:22px;overflow:auto}aside h2{font-size:18px;margin-top:0}select,input{width:100%;margin:8px 0 20px}label{font-weight:650}button{padding:9px 14px;background:#133e4a;color:white;border:0;border-radius:4px;cursor:pointer}.ramp{height:18px;margin-top:12px}.ticks{display:flex;justify-content:space-between;font-size:13px}.note{font-size:13px;line-height:1.5;color:#45616b}#state{font-size:14px;line-height:1.5}a{color:#066776}@media(max-width:700px){main{display:flex;flex-direction:column;height:auto}#map{height:62vh;min-height:350px}aside{padding:16px}header{padding:12px 16px}h1{font-size:20px}}
 </style></head><body><header><h1>Landsat 8: Kraków i okolice</h1><p>7 sierpnia 2013 • wskaźniki pokrycia terenu • laboratorium geoinformatyki</p></header>
@@ -8,7 +9,12 @@
 <h2>Warstwa wynikowa</h2><label for="layer">Wybór wskaźnika</label><select id="layer"><option>NDVI</option><option>NDBI</option><option>MNDWI</option><option>RGB</option></select>
 <label for="opacity">Przezroczystość warstwy</label><input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85">
 <div id="legend"><div id="ramp" class="ramp"></div><div class="ticks"><span>−1</span><span>0</span><span>1</span></div></div>
-<p id="explain"></p><button id="reset">Cały obszar</button><p id="state">Wczytywanie mapy…</p>
+<p id="explain"></p>
+<div id="stats" style="margin-top: 20px; font-size: 14px;">
+    <strong>Średnia:</strong> <span id="stat-mean">-</span> | 
+    <strong>Mediana:</strong> <span id="stat-median">-</span>
+</div>
+<canvas id="indexChart" style="margin-top: 15px; width: 100%; height: 200px;"></canvas><button id="reset">Cały obszar</button><p id="state">Wczytywanie mapy…</p>
 <p class="note">Przezroczyste piksele oznaczają brak ważnej obserwacji. Skala kolorów obejmuje −1 do 1. Pełne wartości analityczne zapisano w GeoTIFF.</p>
 <p class="note">Zbliżenie powyżej poziomu 12 powiększa istniejące kafelki. Dane źródłowe mają rozdzielczość 30 m.</p>
 <p class="note">Podkład OpenStreetMap wymaga internetu. Warstwy wynikowe oraz biblioteka mapy są lokalne.</p>
@@ -19,15 +25,67 @@ const map=L.map('map',{minZoom:cfg.minzoom,maxZoom:17}).fitBounds(cfg.bounds);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
 const text={NDVI:'NDVI = (B5 − B4) / (B5 + B4). Wysokie wartości często odpowiadają roślinności.',NDBI:'NDBI = (B6 − B5) / (B6 + B5). Dodatni wynik może wskazywać zabudowę lub odsłoniętą glebę.',MNDWI:'MNDWI = (B3 − B6) / (B3 + B6). Wskaźnik wspiera rozpoznawanie wód powierzchniowych.',RGB:'Kompozycja B4/B3/B2. Kontrast: percentyle 2–98 osobno dla kanałów. Kolory służą interpretacji obrazu.'};
 let overlay;
-function change(){const name=document.querySelector('#layer').value;if(overlay)map.removeLayer(overlay);
-overlay=L.tileLayer('tiles/'+name+'/{z}/{x}/{y}.png',{tileSize:256,tms:false,minZoom:cfg.minzoom,maxNativeZoom:cfg.maxzoom,maxZoom:17,bounds:cfg.bounds,noWrap:true,opacity:Number(document.querySelector('#opacity').value),attribution:'Landsat 8 / USGS'}).addTo(map);
-document.querySelector('#explain').textContent=text[name];document.querySelector('#legend').hidden=name==='RGB';
-if(name!=='RGB')document.querySelector('#ramp').style.background='linear-gradient(to right,'+cfg.ramps[name].join(',')+')';
-overlay.on('load',()=>document.querySelector('#state').textContent='Warstwa '+name+' gotowa.');
-overlay.on('tileerror',()=>document.querySelector('#state').textContent='Nie udało się odczytać kafelka. Sprawdź, czy przesłano cały katalog tiles.');}
-document.querySelector('#layer').addEventListener('change',change);
-document.querySelector('#opacity').addEventListener('input',e=>overlay.setOpacity(Number(e.target.value)));
-document.querySelector('#reset').addEventListener('click',()=>map.fitBounds(cfg.bounds));
+let summaryData = null;
+let chartInstance = null;
+
+const ctx = document.getElementById('indexChart').getContext('2d');
+chartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: 'Ilość pikseli', data: [], backgroundColor: '#133e4a' }] },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: { x: { title: { display: true, text: 'Wartość' } }, y: { display: false } }
+    }
+});
+
+function change() {
+    const name = document.querySelector('#layer').value;
+    if(overlay) map.removeLayer(overlay);
+    
+    // Zmiana warstwy na mapie (Twój oryginalny kod)
+    if(name !== 'RGB') {
+        overlay = L.tileLayer('tiles/'+name+'/{z}/{x}/{y}.png',{tileSize:256,tms:false,minZoom:cfg.minzoom,maxNativeZoom:cfg.maxzoom,maxZoom:17,bounds:cfg.bounds,noWrap:true,opacity:Number(document.querySelector('#opacity').value),attribution:'Landsat 8 / USGS'}).addTo(map);
+        document.querySelector('#legend').hidden = false;
+        document.querySelector('#ramp').style.background = 'linear-gradient(to right,'+cfg.ramps[name].join(',')+')';
+    } else {
+        overlay = L.tileLayer('tiles/RGB/{z}/{x}/{y}.png',{tileSize:256,tms:false,minZoom:cfg.minzoom,maxNativeZoom:cfg.maxzoom,maxZoom:17,bounds:cfg.bounds,noWrap:true,opacity:Number(document.querySelector('#opacity').value),attribution:'Landsat 8 / USGS'}).addTo(map);
+        document.querySelector('#legend').hidden = true;
+    }
+    
+    document.querySelector('#explain').textContent = text[name];
+    overlay.on('load',() => document.querySelector('#state').textContent='Warstwa '+name+' gotowa.');
+    overlay.on('tileerror',() => document.querySelector('#state').textContent='Błąd odczytu kafelka.');
+
+    if (summaryData && name !== 'RGB') {
+        const stats = summaryData.indices[name];
+        
+        document.getElementById('stat-mean').textContent = stats.mean.toFixed(3);
+        document.getElementById('stat-median').textContent = stats.median.toFixed(3);
+        document.getElementById('indexChart').style.display = 'block';
+        document.getElementById('stats').style.display = 'block';
+
+        chartInstance.data.labels = stats.hist_labels;
+        chartInstance.data.datasets[0].data = stats.hist_counts;
+        chartInstance.update();
+    } else {
+        document.getElementById('indexChart').style.display = 'none';
+        document.getElementById('stats').style.display = 'none';
+    }
+}
+
+
+document.querySelector('#layer').addEventListener('change', change);
+document.querySelector('#opacity').addEventListener('input', e => overlay.setOpacity(Number(e.target.value)));
+document.querySelector('#reset').addEventListener('click', () => map.fitBounds(cfg.bounds));
+
+fetch('summary.json')
+    .then(r => r.json())
+    .then(data => {
+        summaryData = data;
+        change();
+    })
+    .catch(() => console.error("Nie udało się pobrać statystyk."));
+
 fetch('aoi.geojson').then(r=>{if(!r.ok)throw Error(r.status);return r.json()}).then(g=>L.geoJSON(g,{style:{color:'#143843',weight:1.2,fill:false},interactive:false}).addTo(map)).catch(()=>{document.querySelector('#state').textContent='Granica niedostępna; otwórz mapę przez serwer HTTP.'});
-change();
 </script></body></html>

@@ -217,9 +217,13 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
              'minzoom':minzoom,'maxzoom':maxzoom}
     for name,a in indices.items():
         finite=a[np.isfinite(a)]
+        
+        counts, bins = np.histogram(finite, bins=20, range=(-1,1))
         summary['indices'][name]={'count':int(finite.size),'min':float(finite.min()),'max':float(finite.max()),
             'mean':float(finite.mean()),'median':float(np.median(finite)),
-            'outside_minus1_plus1':int((np.abs(finite)>1).sum())}
+            'outside_minus1_plus1':int((np.abs(finite)>1).sum()),
+            'hist_counts': counts.tolist(),
+            'hist_labels': [round(b, 2) for b in bins[:-1].tolist()]}
         write_geotiff(raster_dir/f'{name}.tif',a,scene['profile'])
     layers={'RGB':stretch_rgb(scene['reflectance']),**{name:index_rgba(a,name) for name,a in indices.items()}}
     for name,rgba in layers.items():
