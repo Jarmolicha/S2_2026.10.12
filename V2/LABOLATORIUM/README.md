@@ -1,12 +1,10 @@
 # Landsat 8: wykład i laboratorium
 
-Kompletny pakiet na **wykład 90 minut i laboratorium 90 minut**. Analiza i przygotowanie mapy odbywają się w Pythonie, bez QGIS. IBIS pominięto. MODIS nie jest częścią obowiązkowego ćwiczenia; istniejący katalog MODIS_Terra pozostaje poza tym pakietem.
+Projekt analizy danych Landsat 8 i generowania interaktywnej mapy internetowej. Wersja V2.
 
 ## Materiały
 
-- [Notatnik Jupyter](notebooks/landsat_od_danych_do_www.ipynb) — wykonany, z wynikami, objaśnieniami i pełnymi poleceniami SSH/SCP.
-- [Wykład PPTX](materials/wyklad_landsat_90min.pptx) — 25 slajdów, 90 minut, notatki prowadzącego i rzeczywiste wyniki.
-- [Konspekt PDF](materials/konspekt_landsat.pdf) — 22 strony instrukcji krok po kroku, przykłady i rozwiązywanie problemów.
+- [Notatnik Jupyter](notebooks/landsat_do_www_v2.ipynb) — wykonany, z wynikami, objaśnieniami i pełnymi poleceniami SSH/SCP.
 - [Polecenia iTerm](docs/polecenia_iterm.md) — środowisko, uruchomienie, podgląd i publikacja.
 - [Kod Pythona](src/landsat_lab.py) — wspólna implementacja używana przez notatnik i konsolę.
 - [Wyniki](outputs/summary.json) — statystyki i parametry obliczeń.
@@ -20,7 +18,7 @@ python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 python -m ipykernel install --sys-prefix --name landsat-lab --display-name "Python (Landsat LAB)"
-python -m jupyterlab notebooks/landsat_od_danych_do_www.ipynb
+python -m jupyterlab notebooks/landsat_do_www_v2.ipynb
 ```
 
 Wybierz kernel `Python (Landsat LAB)`. Notatnik wykonuje się od początku bez ręcznego przygotowania plików w QGIS. Publikacja jest osobnym krokiem wykonywanym w terminalu przez właściciela konta.
@@ -73,10 +71,6 @@ Sprawdzono: pięć testów istotnych dla obliczeń, pełne wykonanie notatnika z
 
 `requirements.txt` utrwala bezpośrednie zależności dla studenta. `requirements-lock.txt` jest pełnym zapisem środowiska sprawdzającego (w tym biblioteki do tworzenia PDF). Dla odtworzenia pełnego środowiska użyj `python -m pip install -r requirements-lock.txt`; plik zawiera macOS-owe appnope, więc dla innych systemów preferuj requirements.txt.
 
-## Dla prowadzącego
+## Autorstwo i licencje
 
-Wykład ma 25 slajdów i notatki z czasem, pytaniami i źródłami. Laboratorium wymaga wcześniejszej instalacji i sprawnego konta. Kryteria: obliczenia i QA 4 pkt, mapa 2 pkt, publikacja 2 pkt, interpretacja 2 pkt.
-
-Do udostępnienia studentom wystarczą `data`, `src`, `notebooks`, `docs`, `materials`, `requirements.txt`, README i LICENSE. Gotowy `outputs/site` może służyć jako przykład awaryjny. Nie kopiuj `.venv`, `.build` ani `__pycache__`.
-
-Skrypty `tools/` służą odtwarzaniu materiałów przez prowadzącego. Nie są częścią ćwiczenia. Oryginalne katalogi projektu pozostawiono bez zmian. Pierwotny credit: S. Moliński. Licencja projektu: [LICENSE](LICENSE); Leaflet: [licencja biblioteki](src/vendor/LICENSE-Leaflet.txt).
+Materiały źródłowe: S. Moliński. Licencja projektu: [LICENSE](LICENSE). Leaflet: [licencja biblioteki](src/vendor/LICENSE-Leaflet.txt).
