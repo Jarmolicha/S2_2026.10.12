@@ -3,7 +3,7 @@ import sys,unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 import numpy as np
-from landsat_lab import normalized_difference,quality_mask,read_metadata,ROOT
+from landsat_lab import normalized_difference,quality_mask,read_metadata,classify_land_cover,class_stats,CLASS_NODATA,ROOT
 class CoreTests(unittest.TestCase):
  def test_signed_zero_and_invalid(self):
   out=normalized_difference(np.array([.6,.2,.2,0,np.nan]),np.array([.2,.6,.2,0,.1]))
@@ -21,4 +21,10 @@ class CoreTests(unittest.TestCase):
   m=read_metadata(ROOT/'data/scene')
   self.assertEqual(m['date'],'2013-08-07')
   self.assertEqual(m['bands']['sr_band5']['scale'],.0001)
+ def test_land_cover_classes(self):
+  # woda, roslinnosc, zabudowa, inne, woda ma pierwszenstwo przed roslinnoscia, brak danych
+  ind={'MNDWI':np.array([.4,-.3,-.3,-.3,.2,np.nan]),'NDVI':np.array([0,.6,.1,.1,.6,.5]),'NDBI':np.array([-.2,-.2,.15,-.1,-.2,0])}
+  c=classify_land_cover(ind)
+  np.testing.assert_array_equal(c,[1,2,3,0,1,CLASS_NODATA])
+  self.assertAlmostEqual(sum(s['percent'] for s in class_stats(c)),100,places=1)
 if __name__=='__main__':unittest.main()
