@@ -56,6 +56,10 @@ a { color: #066776; }
 .view-switch button { padding: 10px 8px; color: #133e4a; background: #dfe9e7; font: inherit; font-size: 13px; }
 .view-switch button[aria-pressed="true"] { color: white; background: #133e4a; }
 .view-switch button:focus-visible { outline: 2px solid #066776; outline-offset: 2px; }
+#swapLayers { width: 100%; margin-bottom: 8px; font: inherit; font-size: 13px; }
+.layer-legend { margin-bottom: 16px; padding-top: 12px; border-top: 1px solid #d5e0de; font-size: 14px; }
+.layer-legend .note { margin-bottom: 0; }
+.class-legend { font-size: 14px; line-height: 1.8; }
 #comparison { position: absolute; inset: 0; z-index: 650; pointer-events: none; }
 #comparisonDivider {
   position: absolute;
@@ -110,8 +114,8 @@ a { color: #066776; }
 <main><div id="map" aria-label="Interaktywna mapa wskaźników"></div>
 <div id="comparison" hidden>
   <div id="comparisonDivider">
-    <span class="comparison-label comparison-label-left">RGB</span>
-    <span class="comparison-label comparison-label-right">NDVI</span>
+    <span id="comparisonLabelLeft" class="comparison-label comparison-label-left">RGB</span>
+    <span id="comparisonLabelRight" class="comparison-label comparison-label-right">NDVI</span>
     <button id="comparisonHandle" type="button" role="slider" aria-label="Podział obrazu RGB i NDVI" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-describedby="comparisonHelp"><span aria-hidden="true">↔</span></button>
   </div>
 </div>
@@ -119,16 +123,25 @@ a { color: #066776; }
 <h2>Warstwy i porównanie</h2>
 <div class="view-switch" role="group" aria-label="Tryb wyświetlania mapy">
   <button id="singleView" type="button" aria-pressed="false">Jedna warstwa</button>
-  <button id="compareView" type="button" aria-pressed="true">RGB ↔ NDVI</button>
+  <button id="compareView" type="button" aria-pressed="true">Porównanie</button>
+</div>
+<div id="comparisonControls">
+  <label for="leftLayer">Lewa strona mapy</label>
+  <select id="leftLayer"><option selected>RGB</option><option>NDVI</option><option>NDBI</option><option>MNDWI</option><option value="KLASY">Klasy pokrycia terenu</option></select>
+  <label for="rightLayer">Prawa strona mapy</label>
+  <select id="rightLayer"><option>RGB</option><option selected>NDVI</option><option>NDBI</option><option>MNDWI</option><option value="KLASY">Klasy pokrycia terenu</option></select>
+  <button id="swapLayers" type="button">Zamień strony ↔</button>
 </div>
 <p id="comparisonHelp" class="note">RGB po lewej, NDVI po prawej. Przeciągnij zielony uchwyt, aby porównać ten sam obszar. Możesz też użyć strzałek na klawiaturze.</p>
 <div id="singleLayerControls" hidden>
-<label for="layer">Wybór wskaźnika</label><select id="layer"><option>NDVI</option><option>NDBI</option><option>MNDWI</option><option>RGB</option><option value="KLASY">Klasy pokrycia terenu</option></select>
+<label for="layer">Wybór warstwy</label><select id="layer"><option>NDVI</option><option>NDBI</option><option>MNDWI</option><option>RGB</option><option value="KLASY">Klasy pokrycia terenu</option></select>
 </div>
 <label for="opacity">Przezroczystość warstwy</label><input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85">
+<div id="comparisonLegends" hidden><div id="leftLegend" class="layer-legend"></div><div id="rightLegend" class="layer-legend"></div></div>
 <div id="legend"><div id="ramp" class="ramp"></div><div class="ticks"><span>−1</span><span>0</span><span>1</span></div></div>
-<div id="classLegend" hidden style="font-size: 14px; line-height: 1.8;"></div>
-<p id="explain"></p>
+<div id="classLegend" class="class-legend" hidden></div>
+<div id="explain"></div>
+<div id="statsLayerControls" hidden><label for="statsLayer">Statystyki wskaźnika</label><select id="statsLayer"></select></div>
 <p id="statsTitle" class="note" hidden></p>
 <p id="statsMessage" class="note">Wczytywanie statystyk…</p>
 <div id="stats" style="margin-top: 20px; font-size: 14px;">
@@ -176,6 +189,53 @@ let tileFailure = false;
 const comparison = document.querySelector('#comparison');
 const divider = document.querySelector('#comparisonDivider');
 const handle = document.querySelector('#comparisonHandle');
+const leftLayer = document.querySelector('#leftLayer');
+const rightLayer = document.querySelector('#rightLayer');
+const statsLayer = document.querySelector('#statsLayer');
+
+function layerName(name) { return name === 'KLASY' ? 'Klasy pokrycia terenu' : name; }
+function isIndex(name) { return Object.prototype.hasOwnProperty.call(cfg.ramps, name); }
+function selectedLayers() {
+    return comparisonEnabled ? [leftLayer.value, rightLayer.value] : [document.querySelector('#layer').value];
+}
+
+function renderLayerLegend(target, name, side) {
+    target.replaceChildren();
+    const title = document.createElement('strong');
+    title.textContent = side + ': ' + layerName(name);
+    target.append(title);
+    if (isIndex(name)) {
+        const ramp = document.createElement('div');
+        ramp.className = 'ramp';
+        ramp.style.background = 'linear-gradient(to right,' + cfg.ramps[name].join(',') + ')';
+        const ticks = document.createElement('div');
+        ticks.className = 'ticks';
+        for (const value of ['−1', '0', '1']) {
+            const tick = document.createElement('span');
+            tick.textContent = value;
+            ticks.append(tick);
+        }
+        target.append(ramp, ticks);
+    } else if (name === 'KLASY') {
+        const classes = document.createElement('div');
+        classes.className = 'class-legend';
+        classes.innerHTML = classHtml;
+        target.append(classes);
+    } else {
+        const note = document.createElement('p');
+        note.className = 'note';
+        note.textContent = 'Kolory naturalne: kanały B4/B3/B2.';
+        target.append(note);
+    }
+}
+
+function configureStatistics() {
+    const indices = [...new Set(selectedLayers().filter(isIndex))];
+    const previous = statsLayer.value;
+    statsLayer.replaceChildren(...indices.map(name => new Option(name, name)));
+    statsLayer.value = indices.includes(previous) ? previous : (indices[indices.length - 1] || '');
+    document.querySelector('#statsLayerControls').hidden = !comparisonEnabled || indices.length < 2;
+}
 
 const ctx = document.getElementById('indexChart').getContext('2d');
 if (typeof Chart !== 'undefined') chartInstance = new Chart(ctx, {
@@ -192,7 +252,9 @@ function updateState() {
     if (tileFailure) {
         document.querySelector('#state').textContent = 'Błąd odczytu kafelka. Sprawdź kompletność warstw w katalogu tiles.';
     } else if (activeLayers.length && activeLayers.every(layer => !layer.isLoading())) {
-        document.querySelector('#state').textContent = comparisonEnabled ? 'Porównanie RGB i NDVI gotowe.' : 'Warstwa ' + document.querySelector('#layer').value + ' gotowa.';
+        document.querySelector('#state').textContent = comparisonEnabled
+            ? 'Porównanie ' + layerName(leftLayer.value) + ' i ' + layerName(rightLayer.value) + ' gotowe.'
+            : 'Warstwa ' + layerName(document.querySelector('#layer').value) + ' gotowa.';
     }
 }
 
@@ -211,9 +273,9 @@ function addResultLayer(name) {
 }
 
 function updateStatistics() {
-    const name = comparisonEnabled ? 'NDVI' : document.querySelector('#layer').value;
+    const name = comparisonEnabled ? statsLayer.value : document.querySelector('#layer').value;
     const stats = summaryData && summaryData.indices[name];
-    const hasIndex = Object.prototype.hasOwnProperty.call(cfg.ramps, name);
+    const hasIndex = isIndex(name);
     document.querySelector('#statsTitle').hidden = !hasIndex;
     document.querySelector('#statsTitle').textContent = 'Statystyki ' + name + ' dla całego obszaru';
     document.querySelector('#stats').hidden = !stats;
@@ -265,7 +327,7 @@ function updateComparison() {
     document.querySelectorAll('.comparison-label').forEach(label => { label.style.top = geometry.labelY + 'px'; });
     const percent = Math.round(splitPosition * 100);
     handle.setAttribute('aria-valuenow', String(percent));
-    handle.setAttribute('aria-valuetext', `${percent}% RGB, ${100 - percent}% NDVI`);
+    handle.setAttribute('aria-valuetext', `${percent}% ${layerName(leftLayer.value)} po lewej, ${100 - percent}% ${layerName(rightLayer.value)} po prawej`);
 }
 
 function finishComparisonDrag(event) {
@@ -319,24 +381,48 @@ function change() {
     activeLayers = [];
     tileFailure = false;
     document.querySelector('#state').textContent = 'Wczytywanie warstw…';
-    const name = comparisonEnabled ? 'NDVI' : document.querySelector('#layer').value;
+    const names = selectedLayers();
+    const name = names[0];
     comparison.hidden = !comparisonEnabled;
+    document.querySelector('#comparisonControls').hidden = !comparisonEnabled;
     document.querySelector('#singleLayerControls').hidden = comparisonEnabled;
     document.querySelector('#comparisonHelp').hidden = !comparisonEnabled;
     document.querySelector('#singleView').setAttribute('aria-pressed', String(!comparisonEnabled));
     document.querySelector('#compareView').setAttribute('aria-pressed', String(comparisonEnabled));
-    document.querySelector('#legend').hidden = name === 'RGB' || name === 'KLASY';
-    document.querySelector('#classLegend').hidden = name !== 'KLASY';
+    document.querySelector('#comparisonLegends').hidden = !comparisonEnabled;
+    document.querySelector('#legend').hidden = comparisonEnabled || !isIndex(name);
+    document.querySelector('#classLegend').hidden = comparisonEnabled || name !== 'KLASY';
     if (cfg.ramps[name]) document.querySelector('#ramp').style.background = 'linear-gradient(to right,' + cfg.ramps[name].join(',') + ')';
-    document.querySelector('#explain').textContent = comparisonEnabled ? 'Lewa strona: kompozycja RGB B4/B3/B2. Prawa strona: ' + text.NDVI : text[name];
-    if (comparisonEnabled) addResultLayer('RGB');
-    addResultLayer(name);
+    if (comparisonEnabled) {
+        document.querySelector('#comparisonLabelLeft').textContent = leftLayer.value === 'KLASY' ? 'Klasy' : leftLayer.value;
+        document.querySelector('#comparisonLabelRight').textContent = rightLayer.value === 'KLASY' ? 'Klasy' : rightLayer.value;
+        handle.setAttribute('aria-label', 'Podział obrazu: ' + layerName(leftLayer.value) + ' po lewej, ' + layerName(rightLayer.value) + ' po prawej');
+        document.querySelector('#comparisonHelp').textContent = layerName(leftLayer.value) + ' po lewej, ' + layerName(rightLayer.value) + ' po prawej. Przeciągnij zielony uchwyt, aby porównać ten sam obszar. Możesz też użyć strzałek na klawiaturze.';
+        renderLayerLegend(document.querySelector('#leftLegend'), leftLayer.value, 'Lewa strona');
+        renderLayerLegend(document.querySelector('#rightLegend'), rightLayer.value, 'Prawa strona');
+    }
+    document.querySelector('#explain').replaceChildren(...names.map((name, index) => {
+        const paragraph = document.createElement('p');
+        paragraph.textContent = (comparisonEnabled ? (index === 0 ? 'Lewa' : 'Prawa') + ' strona (' + layerName(name) + '): ' : '') + text[name];
+        return paragraph;
+    }));
+    names.forEach(addResultLayer);
+    configureStatistics();
     updateStatistics();
     updateComparison();
     updateState();
 }
 
 document.querySelector('#layer').addEventListener('change', change);
+leftLayer.addEventListener('change', change);
+rightLayer.addEventListener('change', change);
+document.querySelector('#swapLayers').addEventListener('click', () => {
+    const previousLeft = leftLayer.value;
+    leftLayer.value = rightLayer.value;
+    rightLayer.value = previousLeft;
+    change();
+});
+statsLayer.addEventListener('change', updateStatistics);
 document.querySelector('#singleView').addEventListener('click', () => { comparisonEnabled = false; change(); });
 document.querySelector('#compareView').addEventListener('click', () => { comparisonEnabled = true; change(); });
 document.querySelector('#opacity').addEventListener('input', e => activeLayers.forEach(layer => layer.setOpacity(Number(e.target.value))));
