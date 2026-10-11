@@ -28,7 +28,7 @@ const text={NDVI:'NDVI = (B5 − B4) / (B5 + B4). Wysokie wartości często odpo
 
 // legenda klas pokrycia terenu
 const th = cfg.classes.thresholds;
-text.KLASY = 'Klasyfikacja progowa: woda (MNDWI > ' + th.MNDWI + '), roślinność (NDVI > ' + th.NDVI + '), zabudowa lub odsłonięta gleba (NDBI > ' + th.NDBI + '). Pozostałe piksele to „Inne”.';
+text.KLASY = 'Klasyfikacja progowa: woda (MNDWI > ' + th.MNDWI + '), roślinność (NDVI > ' + th.NDVI + '), zabudowa (NDBI > ' + th.NDBI + '), a jeśli przy tym MNDWI < ' + th.GLEBA_MNDWI + ' to odsłonięta gleba / pola. Pozostałe piksele to „Inne”.';
 let classHtml = '';
 for (const c of cfg.classes.stats) {
     classHtml += '<div><span style="display:inline-block; width:14px; height:14px; background:' + c.color + '"></span> ' + c.name + ': <b>' + c.percent + '%</b></div>';

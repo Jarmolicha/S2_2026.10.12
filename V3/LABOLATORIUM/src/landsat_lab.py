@@ -25,9 +25,9 @@ INDEX_BANDS = {'NDVI': (5, 4), 'NDBI': (6, 5), 'MNDWI': (3, 6)}
 CMAPS = {'NDVI': 'RdYlGn', 'NDBI': 'PuOr_r', 'MNDWI': 'BrBG'}
 NS = {'e': 'http://espa.cr.usgs.gov/v2'}
 # Progi do klasyfikacji pokrycia terenu
-THRESHOLDS = {'MNDWI': 0.0, 'NDVI': 0.3, 'NDBI': 0.0}
+THRESHOLDS = {'MNDWI': 0.0, 'NDVI': 0.4, 'NDBI': -0.1, 'GLEBA_MNDWI': -0.4}
 # Klasy: (kod, nazwa, kolor)
-CLASSES = [(0, 'Inne', '#d9c9a3'), (1, 'Woda', '#2b7bba'), (2, 'Roślinność', '#3a9a3f'), (3, 'Zabudowa / odsłonięta gleba', '#c8473b')]
+CLASSES = [(0, 'Inne', '#d9c9a3'), (1, 'Woda', '#2b7bba'), (2, 'Roślinność', '#3a9a3f'), (3, 'Zabudowa', '#c8473b'), (4, 'Odsłonięta gleba / pola', '#e0a63a')]
 CLASS_NODATA = 255
 
 
@@ -124,6 +124,8 @@ def classify_land_cover(indices: dict, thresholds: dict = THRESHOLDS) -> np.ndar
     classes = np.full(ndvi.shape, CLASS_NODATA, dtype='uint8')
     classes[valid] = 0                                    # inne
     classes[valid & (ndbi > thresholds['NDBI'])] = 3      # zabudowa
+    # pola po żniwach też mają wysokie NDBI, ale dużo niższe MNDWI niż miasto
+    classes[valid & (ndbi > thresholds['NDBI']) & (mndwi < thresholds['GLEBA_MNDWI'])] = 4   # gleba
     classes[valid & (ndvi > thresholds['NDVI'])] = 2      # roślinność
     classes[valid & (mndwi > thresholds['MNDWI'])] = 1    # woda
     return classes

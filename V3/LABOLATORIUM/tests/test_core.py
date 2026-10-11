@@ -22,9 +22,9 @@ class CoreTests(unittest.TestCase):
   self.assertEqual(m['date'],'2013-08-07')
   self.assertEqual(m['bands']['sr_band5']['scale'],.0001)
  def test_land_cover_classes(self):
-  # woda, roslinnosc, zabudowa, inne, woda ma pierwszenstwo przed roslinnoscia, brak danych
-  ind={'MNDWI':np.array([.4,-.3,-.3,-.3,.2,np.nan]),'NDVI':np.array([0,.6,.1,.1,.6,.5]),'NDBI':np.array([-.2,-.2,.15,-.1,-.2,0])}
+  # woda, roslinnosc, zabudowa, inne, woda ma pierwszenstwo przed roslinnoscia, brak danych, gleba
+  ind={'MNDWI':np.array([.4,-.3,-.3,-.3,.2,np.nan,-.5]),'NDVI':np.array([0,.6,.1,.1,.6,.5,.3]),'NDBI':np.array([-.2,-.2,.15,-.1,-.2,0,0])}
   c=classify_land_cover(ind)
-  np.testing.assert_array_equal(c,[1,2,3,0,1,CLASS_NODATA])
+  np.testing.assert_array_equal(c,[1,2,3,0,1,CLASS_NODATA,4])
   self.assertAlmostEqual(sum(s['percent'] for s in class_stats(c)),100,places=1)
 if __name__=='__main__':unittest.main()
