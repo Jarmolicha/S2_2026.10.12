@@ -267,6 +267,10 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
             'hist_labels': [round(b, 2) for b in bins[:-1].tolist()]}
         write_geotiff(raster_dir/f'{name}.tif',a,scene['profile'])
     layers={'RGB':stretch_rgb(scene['reflectance']),**{name:index_rgba(a,name) for name,a in indices.items()}}
+    # klasyfikacja pokrycia terenu
+    classes=classify_land_cover(indices)
+    summary['classes']={'thresholds':THRESHOLDS,'stats':class_stats(classes)}
+    layers['KLASY']=class_rgba(classes)
     for name,rgba in layers.items():
         p=raster_dir/f'{name}_display.tif'
         write_geotiff(p,rgba,scene['profile'],rgba=True)
@@ -279,6 +283,7 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
     w,s,e,n=transform_bounds(scene['profile']['crs'],'EPSG:4326',*bounds)
     config={'bounds':[[s,w],[n,e]],'minzoom':minzoom,'maxzoom':maxzoom,'date':summary['date'],
             'ramps':{name:['#'+''.join(f'{v:02x}' for v in matplotlib.colormaps[CMAPS[name]](float(t),bytes=True)[:3]) for t in np.linspace(0,1,9)] for name in indices}}
+    config['classes']=summary['classes']
     template=(Path(__file__).parent/'map_template.html').read_text(encoding='utf-8')
     (site/'index.html').write_text(template.replace('__MAP_CONFIG__',json.dumps(config)),encoding='utf-8')
     summary['export_seconds']=round(time.perf_counter()-start,2)
