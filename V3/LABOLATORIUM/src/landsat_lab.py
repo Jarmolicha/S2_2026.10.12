@@ -24,6 +24,11 @@ ROOT = Path(__file__).resolve().parents[1]
 INDEX_BANDS = {'NDVI': (5, 4), 'NDBI': (6, 5), 'MNDWI': (3, 6)}
 CMAPS = {'NDVI': 'RdYlGn', 'NDBI': 'PuOr_r', 'MNDWI': 'BrBG'}
 NS = {'e': 'http://espa.cr.usgs.gov/v2'}
+# Progi do klasyfikacji pokrycia terenu
+THRESHOLDS = {'MNDWI': 0.0, 'NDVI': 0.4, 'NDBI': -0.1, 'GLEBA_MNDWI': -0.4}
+# Klasy: (kod, nazwa, kolor)
+CLASSES = [(0, 'Inne', '#d9c9a3'), (1, 'Woda', '#2b7bba'), (2, 'Roślinność', '#3a9a3f'), (3, 'Zabudowa', '#c8473b'), (4, 'Odsłonięta gleba / pola', '#e0a63a')]
+CLASS_NODATA = 255
 
 
 def read_metadata(scene: Path) -> dict:
@@ -108,6 +113,44 @@ def normalized_difference(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 def calculate_indices(reflectance: dict) -> dict:
     return {name: normalized_difference(reflectance[a], reflectance[b]) for name, (a, b) in INDEX_BANDS.items()}
+
+
+def classify_land_cover(indices: dict, thresholds: dict = THRESHOLDS) -> np.ndarray:
+    """Klasyfikacja progowa. Kolejne linie nadpisują poprzednie, więc woda ma pierwszeństwo."""
+    ndvi = indices['NDVI']
+    ndbi = indices['NDBI']
+    mndwi = indices['MNDWI']
+    valid = np.isfinite(ndvi) & np.isfinite(ndbi) & np.isfinite(mndwi)
+    classes = np.full(ndvi.shape, CLASS_NODATA, dtype='uint8')
+    classes[valid] = 0                                    # inne
+    classes[valid & (ndbi > thresholds['NDBI'])] = 3      # zabudowa
+    # pola po żniwach też mają wysokie NDBI, ale dużo niższe MNDWI niż miasto
+    classes[valid & (ndbi > thresholds['NDBI']) & (mndwi < thresholds['GLEBA_MNDWI'])] = 4   # gleba
+    classes[valid & (ndvi > thresholds['NDVI'])] = 2      # roślinność
+    classes[valid & (mndwi > thresholds['MNDWI'])] = 1    # woda
+    return classes
+
+
+def class_stats(classes: np.ndarray) -> list:
+    """Liczba pikseli i procent każdej klasy."""
+    total = np.sum(classes != CLASS_NODATA)
+    stats = []
+    for code, name, color in CLASSES:
+        pixels = int(np.sum(classes == code))
+        percent = round(100 * pixels / total, 2)
+        stats.append({'code': code, 'name': name, 'color': color, 'pixels': pixels, 'percent': percent})
+    return stats
+
+
+def class_rgba(classes: np.ndarray) -> np.ndarray:
+    """Kolorowy obraz klas do kafelków mapy."""
+    rgba = np.zeros((classes.shape[0], classes.shape[1], 4), dtype='uint8')
+    for code, name, color in CLASSES:
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
+        rgba[classes == code] = [r, g, b, 255]
+    return rgba
 
 
 def stretch_rgb(reflectance: dict) -> np.ndarray:
@@ -226,6 +269,10 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
             'hist_labels': [round(b, 2) for b in bins[:-1].tolist()]}
         write_geotiff(raster_dir/f'{name}.tif',a,scene['profile'])
     layers={'RGB':stretch_rgb(scene['reflectance']),**{name:index_rgba(a,name) for name,a in indices.items()}}
+    # klasyfikacja pokrycia terenu
+    classes=classify_land_cover(indices)
+    summary['classes']={'thresholds':THRESHOLDS,'stats':class_stats(classes)}
+    layers['KLASY']=class_rgba(classes)
     for name,rgba in layers.items():
         p=raster_dir/f'{name}_display.tif'
         write_geotiff(p,rgba,scene['profile'],rgba=True)
@@ -238,6 +285,7 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
     w,s,e,n=transform_bounds(scene['profile']['crs'],'EPSG:4326',*bounds)
     config={'bounds':[[s,w],[n,e]],'minzoom':minzoom,'maxzoom':maxzoom,'date':summary['date'],
             'ramps':{name:['#'+''.join(f'{v:02x}' for v in matplotlib.colormaps[CMAPS[name]](float(t),bytes=True)[:3]) for t in np.linspace(0,1,9)] for name in indices}}
+    config['classes']=summary['classes']
     template=(Path(__file__).parent/'map_template.html').read_text(encoding='utf-8')
     (site/'index.html').write_text(template.replace('__MAP_CONFIG__',json.dumps(config)),encoding='utf-8')
     summary['export_seconds']=round(time.perf_counter()-start,2)

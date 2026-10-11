@@ -6,9 +6,10 @@
 *{box-sizing:border-box}body{margin:0;font:16px system-ui,sans-serif;color:#173541;background:#f5f7f6}header{padding:16px 24px;background:#133e4a;color:white}h1{font-size:24px;margin:0 0 4px}header p{margin:0;font-size:14px;color:#d8e7e8}main{display:grid;grid-template-columns:1fr 280px;height:calc(100vh - 89px);min-height:450px}#map{height:100%;background:#e6eceb}aside{padding:22px;overflow:auto}aside h2{font-size:18px;margin-top:0}select,input{width:100%;margin:8px 0 20px}label{font-weight:650}button{padding:9px 14px;background:#133e4a;color:white;border:0;border-radius:4px;cursor:pointer}.ramp{height:18px;margin-top:12px}.ticks{display:flex;justify-content:space-between;font-size:13px}.note{font-size:13px;line-height:1.5;color:#45616b}#state{font-size:14px;line-height:1.5}a{color:#066776}@media(max-width:700px){main{display:flex;flex-direction:column;height:auto}#map{height:62vh;min-height:350px}aside{padding:16px}header{padding:12px 16px}h1{font-size:20px}}
 </style></head><body><header><h1>Landsat 8: Kraków i okolice</h1><p>7 sierpnia 2013 • wskaźniki pokrycia terenu • laboratorium geoinformatyki</p></header>
 <main><div id="map" aria-label="Interaktywna mapa wskaźników"></div><aside>
-<h2>Warstwa wynikowa</h2><label for="layer">Wybór wskaźnika</label><select id="layer"><option>NDVI</option><option>NDBI</option><option>MNDWI</option><option>RGB</option></select>
+<h2>Warstwa wynikowa</h2><label for="layer">Wybór wskaźnika</label><select id="layer"><option>NDVI</option><option>NDBI</option><option>MNDWI</option><option>RGB</option><option value="KLASY">Klasy pokrycia terenu</option></select>
 <label for="opacity">Przezroczystość warstwy</label><input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85">
 <div id="legend"><div id="ramp" class="ramp"></div><div class="ticks"><span>−1</span><span>0</span><span>1</span></div></div>
+<div id="classLegend" hidden style="font-size: 14px; line-height: 1.8;"></div>
 <p id="explain"></p>
 <div id="stats" style="margin-top: 20px; font-size: 14px;">
     <strong>Średnia:</strong> <span id="stat-mean">-</span> | 
@@ -24,6 +25,15 @@ const cfg=__MAP_CONFIG__;
 const map=L.map('map',{minZoom:cfg.minzoom,maxZoom:17}).fitBounds(cfg.bounds);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
 const text={NDVI:'NDVI = (B5 − B4) / (B5 + B4). Wysokie wartości często odpowiadają roślinności.',NDBI:'NDBI = (B6 − B5) / (B6 + B5). Dodatni wynik może wskazywać zabudowę lub odsłoniętą glebę.',MNDWI:'MNDWI = (B3 − B6) / (B3 + B6). Wskaźnik wspiera rozpoznawanie wód powierzchniowych.',RGB:'Kompozycja B4/B3/B2. Kontrast: percentyle 2–98 osobno dla kanałów. Kolory służą interpretacji obrazu.'};
+
+// legenda klas pokrycia terenu
+const th = cfg.classes.thresholds;
+text.KLASY = 'Klasyfikacja progowa: woda (MNDWI > ' + th.MNDWI + '), roślinność (NDVI > ' + th.NDVI + '), zabudowa (NDBI > ' + th.NDBI + '), a jeśli przy tym MNDWI < ' + th.GLEBA_MNDWI + ' to odsłonięta gleba / pola. Pozostałe piksele to „Inne”.';
+let classHtml = '';
+for (const c of cfg.classes.stats) {
+    classHtml += '<div><span style="display:inline-block; width:14px; height:14px; background:' + c.color + '"></span> ' + c.name + ': <b>' + c.percent + '%</b></div>';
+}
+document.querySelector('#classLegend').innerHTML = classHtml;
 let overlay;
 let summaryData = null;
 let chartInstance = null;
@@ -46,18 +56,19 @@ function change() {
     // Zmiana warstwy na mapie (Twój oryginalny kod)
     if(name !== 'RGB') {
         overlay = L.tileLayer('tiles/'+name+'/{z}/{x}/{y}.png',{tileSize:256,tms:false,minZoom:cfg.minzoom,maxNativeZoom:cfg.maxzoom,maxZoom:17,bounds:cfg.bounds,noWrap:true,opacity:Number(document.querySelector('#opacity').value),attribution:'Landsat 8 / USGS'}).addTo(map);
-        document.querySelector('#legend').hidden = false;
-        document.querySelector('#ramp').style.background = 'linear-gradient(to right,'+cfg.ramps[name].join(',')+')';
+        document.querySelector('#legend').hidden = (name === 'KLASY');
+        if (name !== 'KLASY') document.querySelector('#ramp').style.background = 'linear-gradient(to right,'+cfg.ramps[name].join(',')+')';
     } else {
         overlay = L.tileLayer('tiles/RGB/{z}/{x}/{y}.png',{tileSize:256,tms:false,minZoom:cfg.minzoom,maxNativeZoom:cfg.maxzoom,maxZoom:17,bounds:cfg.bounds,noWrap:true,opacity:Number(document.querySelector('#opacity').value),attribution:'Landsat 8 / USGS'}).addTo(map);
         document.querySelector('#legend').hidden = true;
     }
     
+    document.querySelector('#classLegend').hidden = (name !== 'KLASY');
     document.querySelector('#explain').textContent = text[name];
     overlay.on('load',() => document.querySelector('#state').textContent='Warstwa '+name+' gotowa.');
     overlay.on('tileerror',() => document.querySelector('#state').textContent='Błąd odczytu kafelka.');
 
-    if (summaryData && name !== 'RGB') {
+    if (summaryData && name !== 'RGB' && name !== 'KLASY') {
         const stats = summaryData.indices[name];
         
         document.getElementById('stat-mean').textContent = stats.mean.toFixed(3);
