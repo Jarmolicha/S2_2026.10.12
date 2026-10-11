@@ -51,6 +51,55 @@ button { padding: 9px 14px; background: #133e4a; color: white; border: 0; border
 .note { font-size: 13px; line-height: 1.5; color: #45616b; }
 #state { font-size: 14px; line-height: 1.5; }
 a { color: #066776; }
+[hidden] { display: none !important; }
+.view-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 18px; }
+.view-switch button { padding: 10px 8px; color: #133e4a; background: #dfe9e7; font: inherit; font-size: 13px; }
+.view-switch button[aria-pressed="true"] { color: white; background: #133e4a; }
+.view-switch button:focus-visible { outline: 2px solid #066776; outline-offset: 2px; }
+#comparison { position: absolute; inset: 0; z-index: 650; pointer-events: none; }
+#comparisonDivider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: white;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}
+.comparison-label {
+  position: absolute;
+  top: 100px;
+  padding: 6px 12px;
+  color: white;
+  background: #133e4a;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.comparison-label-left { right: 14px; }
+.comparison-label-right { left: 14px; }
+#comparisonHandle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  color: #133e4a;
+  background: #4ade80;
+  border: 2px solid #133e4a;
+  border-radius: 50%;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
+  font-size: 26px;
+  line-height: 1;
+  cursor: ew-resize;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+}
+#comparisonHandle:focus-visible { outline: 3px solid white; outline-offset: 3px; }
 @media (max-width: 700px) {
   header { top: 12px; left: 58px; right: 12px; max-width: none; padding: 10px 12px; }
   h1 { font-size: 16px; }
@@ -58,12 +107,30 @@ a { color: #066776; }
   aside { top: auto; left: 12px; right: 12px; bottom: 32px; width: auto; max-height: 38vh; max-height: 38dvh; padding: 16px; }
 }
 </style></head><body><header><h1>Landsat 8: Kraków i okolice</h1><p>7 sierpnia 2013 • wskaźniki pokrycia terenu • laboratorium geoinformatyki</p></header>
-<main><div id="map" aria-label="Interaktywna mapa wskaźników"></div><aside>
-<h2>Warstwa wynikowa</h2><label for="layer">Wybór wskaźnika</label><select id="layer"><option>NDVI</option><option>NDBI</option><option>MNDWI</option><option>RGB</option><option value="KLASY">Klasy pokrycia terenu</option></select>
+<main><div id="map" aria-label="Interaktywna mapa wskaźników"></div>
+<div id="comparison" hidden>
+  <div id="comparisonDivider">
+    <span class="comparison-label comparison-label-left">RGB</span>
+    <span class="comparison-label comparison-label-right">NDVI</span>
+    <button id="comparisonHandle" type="button" role="slider" aria-label="Podział obrazu RGB i NDVI" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-describedby="comparisonHelp"><span aria-hidden="true">↔</span></button>
+  </div>
+</div>
+<aside>
+<h2>Warstwy i porównanie</h2>
+<div class="view-switch" role="group" aria-label="Tryb wyświetlania mapy">
+  <button id="singleView" type="button" aria-pressed="false">Jedna warstwa</button>
+  <button id="compareView" type="button" aria-pressed="true">RGB ↔ NDVI</button>
+</div>
+<p id="comparisonHelp" class="note">RGB po lewej, NDVI po prawej. Przeciągnij zielony uchwyt, aby porównać ten sam obszar. Możesz też użyć strzałek na klawiaturze.</p>
+<div id="singleLayerControls" hidden>
+<label for="layer">Wybór wskaźnika</label><select id="layer"><option>NDVI</option><option>NDBI</option><option>MNDWI</option><option>RGB</option><option value="KLASY">Klasy pokrycia terenu</option></select>
+</div>
 <label for="opacity">Przezroczystość warstwy</label><input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85">
 <div id="legend"><div id="ramp" class="ramp"></div><div class="ticks"><span>−1</span><span>0</span><span>1</span></div></div>
 <div id="classLegend" hidden style="font-size: 14px; line-height: 1.8;"></div>
 <p id="explain"></p>
+<p id="statsTitle" class="note" hidden></p>
+<p id="statsMessage" class="note">Wczytywanie statystyk…</p>
 <div id="stats" style="margin-top: 20px; font-size: 14px;">
     <strong>Średnia:</strong> <span id="stat-mean">-</span> | 
     <strong>Mediana:</strong> <span id="stat-median">-</span>
@@ -98,12 +165,20 @@ for (const c of cfg.classes.stats) {
     classHtml += '<div><span style="display:inline-block; width:14px; height:14px; background:' + c.color + '"></span> ' + c.name + ': <b>' + c.percent + '%</b></div>';
 }
 document.querySelector('#classLegend').innerHTML = classHtml;
-let overlay;
+let activeLayers = [];
 let summaryData = null;
 let chartInstance = null;
+let summaryFailed = false;
+let comparisonEnabled = true;
+let splitPosition = 0.5;
+let pointerDrag = null;
+let tileFailure = false;
+const comparison = document.querySelector('#comparison');
+const divider = document.querySelector('#comparisonDivider');
+const handle = document.querySelector('#comparisonHandle');
 
 const ctx = document.getElementById('indexChart').getContext('2d');
-chartInstance = new Chart(ctx, {
+if (typeof Chart !== 'undefined') chartInstance = new Chart(ctx, {
     type: 'bar',
     data: { labels: [], datasets: [{ label: 'Ilość pikseli', data: [], backgroundColor: '#133e4a' }] },
     options: {
@@ -113,54 +188,170 @@ chartInstance = new Chart(ctx, {
     }
 });
 
-function change() {
-    const name = document.querySelector('#layer').value;
-    if(overlay) map.removeLayer(overlay);
-    
-    // Zmiana warstwy na mapie (Twój oryginalny kod)
-    if(name !== 'RGB') {
-        overlay = L.tileLayer('tiles/'+name+'/{z}/{x}/{y}.png',{tileSize:256,tms:false,minZoom:cfg.minzoom,maxNativeZoom:cfg.maxzoom,maxZoom:17,bounds:cfg.bounds,noWrap:true,opacity:Number(document.querySelector('#opacity').value),attribution:'Landsat 8 / USGS'}).addTo(map);
-        document.querySelector('#legend').hidden = (name === 'KLASY');
-        if (name !== 'KLASY') document.querySelector('#ramp').style.background = 'linear-gradient(to right,'+cfg.ramps[name].join(',')+')';
-    } else {
-        overlay = L.tileLayer('tiles/RGB/{z}/{x}/{y}.png',{tileSize:256,tms:false,minZoom:cfg.minzoom,maxNativeZoom:cfg.maxzoom,maxZoom:17,bounds:cfg.bounds,noWrap:true,opacity:Number(document.querySelector('#opacity').value),attribution:'Landsat 8 / USGS'}).addTo(map);
-        document.querySelector('#legend').hidden = true;
-    }
-    
-    document.querySelector('#classLegend').hidden = (name !== 'KLASY');
-    document.querySelector('#explain').textContent = text[name];
-    overlay.on('load',() => document.querySelector('#state').textContent='Warstwa '+name+' gotowa.');
-    overlay.on('tileerror',() => document.querySelector('#state').textContent='Błąd odczytu kafelka.');
-
-    if (summaryData && name !== 'RGB' && name !== 'KLASY') {
-        const stats = summaryData.indices[name];
-        
-        document.getElementById('stat-mean').textContent = stats.mean.toFixed(3);
-        document.getElementById('stat-median').textContent = stats.median.toFixed(3);
-        document.getElementById('indexChart').style.display = 'block';
-        document.getElementById('stats').style.display = 'block';
-
-        chartInstance.data.labels = stats.hist_labels;
-        chartInstance.data.datasets[0].data = stats.hist_counts;
-        chartInstance.update();
-    } else {
-        document.getElementById('indexChart').style.display = 'none';
-        document.getElementById('stats').style.display = 'none';
+function updateState() {
+    if (tileFailure) {
+        document.querySelector('#state').textContent = 'Błąd odczytu kafelka. Sprawdź kompletność warstw w katalogu tiles.';
+    } else if (activeLayers.length && activeLayers.every(layer => !layer.isLoading())) {
+        document.querySelector('#state').textContent = comparisonEnabled ? 'Porównanie RGB i NDVI gotowe.' : 'Warstwa ' + document.querySelector('#layer').value + ' gotowa.';
     }
 }
 
+function addResultLayer(name) {
+    const layer = L.tileLayer('tiles/' + name + '/{z}/{x}/{y}.png', {
+        tileSize: 256, tms: false, minZoom: cfg.minzoom, maxNativeZoom: cfg.maxzoom,
+        maxZoom: 17, bounds: cfg.bounds, noWrap: true,
+        opacity: Number(document.querySelector('#opacity').value), attribution: 'Landsat 8 / USGS'
+    });
+    layer.on('load', () => { if (map.hasLayer(layer)) updateState(); });
+    layer.on('tileerror', () => {
+        if (map.hasLayer(layer)) { tileFailure = true; updateState(); }
+    });
+    layer.addTo(map);
+    activeLayers.push(layer);
+}
+
+function updateStatistics() {
+    const name = comparisonEnabled ? 'NDVI' : document.querySelector('#layer').value;
+    const stats = summaryData && summaryData.indices[name];
+    const hasIndex = Object.prototype.hasOwnProperty.call(cfg.ramps, name);
+    document.querySelector('#statsTitle').hidden = !hasIndex;
+    document.querySelector('#statsTitle').textContent = 'Statystyki ' + name + ' dla całego obszaru';
+    document.querySelector('#stats').hidden = !stats;
+    document.querySelector('#indexChart').hidden = !stats || !chartInstance;
+    const message = document.querySelector('#statsMessage');
+    message.hidden = !hasIndex || Boolean(stats && chartInstance);
+    if (stats) {
+        document.getElementById('stat-mean').textContent = stats.mean.toFixed(3);
+        document.getElementById('stat-median').textContent = stats.median.toFixed(3);
+        if (chartInstance) {
+            chartInstance.data.labels = stats.hist_labels;
+            chartInstance.data.datasets[0].data = stats.hist_counts;
+            chartInstance.resize();
+            chartInstance.update();
+        } else {
+            message.textContent = 'Histogram jest chwilowo niedostępny. Statystyki liczbowe pozostają dostępne.';
+        }
+    } else {
+        message.textContent = summaryFailed ? 'Nie udało się wczytać statystyk. Warstwy mapy można nadal przeglądać.' : 'Wczytywanie statystyk…';
+    }
+}
+
+function comparisonGeometry() {
+    const rect = map.getContainer().getBoundingClientRect();
+    const panel = document.querySelector('aside').getBoundingClientRect();
+    const header = document.querySelector('header').getBoundingClientRect();
+    const mobile = window.matchMedia('(max-width: 700px)').matches;
+    const size = map.getSize();
+    // Uchwyt pozostaje w widocznej części mapy, obok panelu lub nad nim.
+    const width = mobile ? size.x : Math.max(1, Math.min(size.x, panel.left - rect.left - 32));
+    const top = Math.min(size.y, Math.max(0, header.bottom - rect.top + 24));
+    const bottom = mobile ? Math.max(top, panel.top - rect.top - 24) : Math.max(top, size.y - 32);
+    return {rect, size, width, handleY: (top + bottom) / 2, labelY: header.bottom - rect.top + 16};
+}
+
+function updateComparison() {
+    if (!comparisonEnabled || activeLayers.length !== 2) return;
+    const geometry = comparisonGeometry();
+    const boundary = Math.round(geometry.width * splitPosition);
+    const upper = map.containerPointToLayerPoint([0, 0]);
+    const lower = map.containerPointToLayerPoint(geometry.size);
+    const cut = upper.x + boundary;
+    const leftContainer = activeLayers[0].getContainer();
+    const rightContainer = activeLayers[1].getContainer();
+    if (leftContainer) leftContainer.style.clip = `rect(${upper.y}px, ${cut}px, ${lower.y}px, ${upper.x}px)`;
+    if (rightContainer) rightContainer.style.clip = `rect(${upper.y}px, ${lower.x}px, ${lower.y}px, ${cut}px)`;
+    divider.style.left = boundary + 'px';
+    handle.style.top = geometry.handleY + 'px';
+    document.querySelectorAll('.comparison-label').forEach(label => { label.style.top = geometry.labelY + 'px'; });
+    const percent = Math.round(splitPosition * 100);
+    handle.setAttribute('aria-valuenow', String(percent));
+    handle.setAttribute('aria-valuetext', `${percent}% RGB, ${100 - percent}% NDVI`);
+}
+
+function finishComparisonDrag(event) {
+    if (!pointerDrag || (event && event.pointerId !== undefined && event.pointerId !== pointerDrag.id)) return;
+    const drag = pointerDrag;
+    pointerDrag = null;
+    if (handle.hasPointerCapture(drag.id)) handle.releasePointerCapture(drag.id);
+    if (drag.mapDragEnabled) map.dragging.enable();
+}
+
+function setPositionFromPointer(event) {
+    const geometry = comparisonGeometry();
+    splitPosition = Math.max(0, Math.min(1, (event.clientX - geometry.rect.left) / geometry.width));
+    updateComparison();
+}
+
+handle.addEventListener('pointerdown', event => {
+    if (!comparisonEnabled || event.isPrimary === false || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    pointerDrag = {id: event.pointerId, mapDragEnabled: map.dragging.enabled()};
+    map.dragging.disable();
+    handle.setPointerCapture(event.pointerId);
+    handle.focus({preventScroll: true});
+    setPositionFromPointer(event);
+});
+handle.addEventListener('pointermove', event => {
+    if (pointerDrag && event.pointerId === pointerDrag.id) setPositionFromPointer(event);
+});
+handle.addEventListener('pointerup', finishComparisonDrag);
+handle.addEventListener('pointercancel', finishComparisonDrag);
+handle.addEventListener('lostpointercapture', finishComparisonDrag);
+window.addEventListener('blur', () => finishComparisonDrag());
+handle.addEventListener('keydown', event => {
+    if (!comparisonEnabled) return;
+    const step = event.shiftKey ? 0.1 : 0.01;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') splitPosition -= step;
+    else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') splitPosition += step;
+    else if (event.key === 'Home') splitPosition = 0;
+    else if (event.key === 'End') splitPosition = 1;
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+    splitPosition = Math.max(0, Math.min(1, splitPosition));
+    updateComparison();
+});
+
+function change() {
+    finishComparisonDrag();
+    activeLayers.forEach(layer => map.removeLayer(layer));
+    activeLayers = [];
+    tileFailure = false;
+    document.querySelector('#state').textContent = 'Wczytywanie warstw…';
+    const name = comparisonEnabled ? 'NDVI' : document.querySelector('#layer').value;
+    comparison.hidden = !comparisonEnabled;
+    document.querySelector('#singleLayerControls').hidden = comparisonEnabled;
+    document.querySelector('#comparisonHelp').hidden = !comparisonEnabled;
+    document.querySelector('#singleView').setAttribute('aria-pressed', String(!comparisonEnabled));
+    document.querySelector('#compareView').setAttribute('aria-pressed', String(comparisonEnabled));
+    document.querySelector('#legend').hidden = name === 'RGB' || name === 'KLASY';
+    document.querySelector('#classLegend').hidden = name !== 'KLASY';
+    if (cfg.ramps[name]) document.querySelector('#ramp').style.background = 'linear-gradient(to right,' + cfg.ramps[name].join(',') + ')';
+    document.querySelector('#explain').textContent = comparisonEnabled ? 'Lewa strona: kompozycja RGB B4/B3/B2. Prawa strona: ' + text.NDVI : text[name];
+    if (comparisonEnabled) addResultLayer('RGB');
+    addResultLayer(name);
+    updateStatistics();
+    updateComparison();
+    updateState();
+}
 
 document.querySelector('#layer').addEventListener('change', change);
-document.querySelector('#opacity').addEventListener('input', e => overlay.setOpacity(Number(e.target.value)));
+document.querySelector('#singleView').addEventListener('click', () => { comparisonEnabled = false; change(); });
+document.querySelector('#compareView').addEventListener('click', () => { comparisonEnabled = true; change(); });
+document.querySelector('#opacity').addEventListener('input', e => activeLayers.forEach(layer => layer.setOpacity(Number(e.target.value))));
 document.querySelector('#reset').addEventListener('click', fitArea);
+map.on('move zoom resize', updateComparison);
+change();
 
 fetch('summary.json')
-    .then(r => r.json())
+    .then(r => { if (!r.ok) throw Error(r.status); return r.json(); })
     .then(data => {
         summaryData = data;
-        change();
+        updateStatistics();
+        updateComparison();
     })
-    .catch(() => console.error("Nie udało się pobrać statystyk."));
+    .catch(() => { summaryFailed = true; updateStatistics(); updateComparison(); });
 
 fetch('aoi.geojson').then(r=>{if(!r.ok)throw Error(r.status);return r.json()}).then(g=>L.geoJSON(g,{style:{color:'#143843',weight:1.2,fill:false},interactive:false}).addTo(map)).catch(()=>{document.querySelector('#state').textContent='Granica niedostępna; otwórz mapę przez serwer HTTP.'});
 </script></body></html>
