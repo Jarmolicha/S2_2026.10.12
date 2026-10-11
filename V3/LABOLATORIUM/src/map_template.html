@@ -3,7 +3,60 @@
 <title>Landsat 8 • Kraków i okolice</title><link rel="stylesheet" href="vendor/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-*{box-sizing:border-box}body{margin:0;font:16px system-ui,sans-serif;color:#173541;background:#f5f7f6}header{padding:16px 24px;background:#133e4a;color:white}h1{font-size:24px;margin:0 0 4px}header p{margin:0;font-size:14px;color:#d8e7e8}main{display:grid;grid-template-columns:1fr 280px;height:calc(100vh - 89px);min-height:450px}#map{height:100%;background:#e6eceb}aside{padding:22px;overflow:auto}aside h2{font-size:18px;margin-top:0}select,input{width:100%;margin:8px 0 20px}label{font-weight:650}button{padding:9px 14px;background:#133e4a;color:white;border:0;border-radius:4px;cursor:pointer}.ramp{height:18px;margin-top:12px}.ticks{display:flex;justify-content:space-between;font-size:13px}.note{font-size:13px;line-height:1.5;color:#45616b}#state{font-size:14px;line-height:1.5}a{color:#066776}@media(max-width:700px){main{display:flex;flex-direction:column;height:auto}#map{height:62vh;min-height:350px}aside{padding:16px}header{padding:12px 16px}h1{font-size:20px}}
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; }
+body {
+  overflow: hidden;
+  font: 16px system-ui, sans-serif;
+  color: #173541;
+  background: #f5f7f6;
+}
+main { position: relative; width: 100%; height: 100vh; height: 100dvh; }
+#map { position: absolute; inset: 0; width: 100%; height: 100%; background: #e6eceb; }
+header {
+  position: absolute;
+  top: 16px;
+  left: 64px;
+  z-index: 1000;
+  max-width: calc(100% - 400px);
+  padding: 10px 14px;
+  color: white;
+  background: #133e4a;
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(19, 62, 74, 0.18);
+}
+h1 { margin: 0 0 4px; font-size: 18px; }
+header p { margin: 0; font-size: 12px; line-height: 1.4; color: #d8e7e8; }
+aside {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  bottom: 32px;
+  z-index: 1000;
+  width: 300px;
+  padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgba(245, 247, 246, 0.96);
+  border: 1px solid rgba(19, 62, 74, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 4px 18px rgba(19, 62, 74, 0.18);
+}
+aside h2 { font-size: 18px; margin-top: 0; }
+select, input { width: 100%; margin: 8px 0 20px; }
+label { font-weight: 650; }
+button { padding: 9px 14px; background: #133e4a; color: white; border: 0; border-radius: 4px; cursor: pointer; }
+.ramp { height: 18px; margin-top: 12px; }
+.ticks { display: flex; justify-content: space-between; font-size: 13px; }
+.note { font-size: 13px; line-height: 1.5; color: #45616b; }
+#state { font-size: 14px; line-height: 1.5; }
+a { color: #066776; }
+@media (max-width: 700px) {
+  header { top: 12px; left: 58px; right: 12px; max-width: none; padding: 10px 12px; }
+  h1 { font-size: 16px; }
+  header p { font-size: 11px; }
+  aside { top: auto; left: 12px; right: 12px; bottom: 32px; width: auto; max-height: 38vh; max-height: 38dvh; padding: 16px; }
+}
 </style></head><body><header><h1>Landsat 8: Kraków i okolice</h1><p>7 sierpnia 2013 • wskaźniki pokrycia terenu • laboratorium geoinformatyki</p></header>
 <main><div id="map" aria-label="Interaktywna mapa wskaźników"></div><aside>
 <h2>Warstwa wynikowa</h2><label for="layer">Wybór wskaźnika</label><select id="layer"><option>NDVI</option><option>NDBI</option><option>MNDWI</option><option>RGB</option><option value="KLASY">Klasy pokrycia terenu</option></select>
@@ -22,7 +75,18 @@
 <p class="note"><a href="summary.json">Statystyki obliczeń</a><br>Dane: USGS/EROS, Landsat Collection 1. Granica pochodzi z projektu dydaktycznego.</p>
 </aside></main><script src="vendor/leaflet.js"></script><script>
 const cfg=__MAP_CONFIG__;
-const map=L.map('map',{minZoom:cfg.minzoom,maxZoom:17}).fitBounds(cfg.bounds);
+const map=L.map('map',{minZoom:cfg.minzoom,maxZoom:17});
+function fitArea() {
+    const header = document.querySelector('header').getBoundingClientRect();
+    const panel = document.querySelector('aside').getBoundingClientRect();
+    const mobile = window.matchMedia('(max-width: 700px)').matches;
+    // Dopasuj obszar do widocznej części mapy, uwzględniając pływające panele.
+    map.fitBounds(cfg.bounds, {
+        paddingTopLeft: [16, Math.ceil(header.bottom) + 12],
+        paddingBottomRight: mobile ? [16, Math.ceil(panel.height) + 44] : [Math.ceil(panel.width) + 32, 32]
+    });
+}
+fitArea();
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
 const text={NDVI:'NDVI = (B5 − B4) / (B5 + B4). Wysokie wartości często odpowiadają roślinności.',NDBI:'NDBI = (B6 − B5) / (B6 + B5). Dodatni wynik może wskazywać zabudowę lub odsłoniętą glebę.',MNDWI:'MNDWI = (B3 − B6) / (B3 + B6). Wskaźnik wspiera rozpoznawanie wód powierzchniowych.',RGB:'Kompozycja B4/B3/B2. Kontrast: percentyle 2–98 osobno dla kanałów. Kolory służą interpretacji obrazu.'};
 
@@ -88,7 +152,7 @@ function change() {
 
 document.querySelector('#layer').addEventListener('change', change);
 document.querySelector('#opacity').addEventListener('input', e => overlay.setOpacity(Number(e.target.value)));
-document.querySelector('#reset').addEventListener('click', () => map.fitBounds(cfg.bounds));
+document.querySelector('#reset').addEventListener('click', fitArea);
 
 fetch('summary.json')
     .then(r => r.json())
