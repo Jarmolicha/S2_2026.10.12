@@ -181,7 +181,11 @@ def write_geotiff(path: Path, data: np.ndarray, profile: dict, rgba=False):
         data = np.where(np.isfinite(data), data, -9999).astype('float32')[None]
         p.update(count=1, dtype='float32', nodata=-9999)
         p.pop('photometric', None)
-    p.update(driver='GTiff', compress='deflate', tiled=True)
+    
+    p.pop('blockxsize', None)
+    p.pop('blockysize', None)
+    p.update(driver='GTiff', compress='deflate', tiled=True,
+         blockxsize=256, blockysize=256)
     with rasterio.open(path, 'w', **p) as dst:
         dst.write(data)
         if rgba:
