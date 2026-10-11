@@ -121,15 +121,25 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 #statsTitle { font-weight: 650; color: var(--text); }
 #stats { padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; line-height: 1.8; }
 #stat-mean, #stat-median { color: var(--accent); font-variant-numeric: tabular-nums; }
-#statsPanel { margin-top: 16px; background: rgba(20, 41, 29, 0.6); border: 1px solid var(--border); border-radius: 12px; }
-#statsPanel summary { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-weight: 650; cursor: pointer; list-style: none; user-select: none; }
-#statsPanel summary::-webkit-details-marker { display: none; }
-#statsPanel summary::before { content: '▸'; color: var(--accent); transition: transform 0.15s; }
-#statsPanel[open] summary::before { transform: rotate(90deg); }
-#statsPanel summary:hover { color: var(--accent-hover); }
-#statsPanel summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 12px; }
-#statsPreview { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
-#statsPanel[open] #statsPreview { display: none; }
+#statsPanel, .fold { margin-top: 16px; background: rgba(20, 41, 29, 0.6); border: 1px solid var(--border); border-radius: 12px; }
+:is(#statsPanel, .fold) summary { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-weight: 650; cursor: pointer; list-style: none; user-select: none; }
+:is(#statsPanel, .fold) summary::-webkit-details-marker { display: none; }
+:is(#statsPanel, .fold) summary::before { content: '▸'; color: var(--accent); transition: transform 0.15s; }
+:is(#statsPanel, .fold)[open] summary::before { transform: rotate(90deg); }
+:is(#statsPanel, .fold) summary:hover { color: var(--accent-hover); }
+:is(#statsPanel, .fold) summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 12px; }
+#statsPreview, .fold-preview { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+#statsPanel[open] #statsPreview, .fold[open] .fold-preview { display: none; }
+.fold + .fold, #statsPanel + .fold { margin-top: 8px; }
+.measure-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.measure-tools button[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.measure-result { margin: 12px 0 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; font-size: 14px; line-height: 1.7; font-variant-numeric: tabular-nums; }
+.measure-result strong { color: var(--accent); }
+.measure-actions { margin-top: 10px; }
+.measure-actions button:only-child { grid-column: 1 / -1; }
+.measuring .leaflet-container, #map.measuring { cursor: crosshair; }
+.measure-tip { padding: 3px 8px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: none; font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.measure-tip::before { display: none; }
 .stats-body { padding: 0 12px 12px; }
 .stats-body .note:first-child, .stats-body #statsTitle { margin-top: 0; }
 #reset { width: 100%; margin-top: 16px; color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
@@ -251,6 +261,18 @@ a:hover { color: var(--accent-hover); }
     <strong>Mediana:</strong> <span id="stat-median">-</span>
 </div>
 <canvas id="indexChart" style="margin-top: 15px; width: 100%; height: 200px;"></canvas>
+</div>
+</details>
+<details id="measurePanel" class="fold">
+<summary><span>Pomiary</span><span id="measurePreview" class="fold-preview"></span></summary>
+<div class="stats-body">
+<div class="measure-tools" role="group" aria-label="Narzędzie pomiaru">
+  <button id="measureDistance" type="button" aria-pressed="false">Odległość</button>
+  <button id="measureArea" type="button" aria-pressed="false">Powierzchnia</button>
+</div>
+<p id="measureResult" class="measure-result" hidden></p>
+<p id="measureHelp" class="note">Wybierz narzędzie i klikaj na mapie kolejne punkty. Dwuklik lub Enter kończy pomiar, Esc anuluje, Backspace cofa ostatni punkt.</p>
+<div class="measure-tools measure-actions"><button id="measureFinish" type="button" hidden>Zakończ</button><button id="measureClear" type="button" hidden>Wyczyść</button></div>
 </div>
 </details>
 <button id="reset">Cały obszar</button><p id="state">Wczytywanie mapy…</p>
@@ -541,6 +563,109 @@ statsLayer.addEventListener('change', updateStatistics);
 document.querySelector('#statsPanel').addEventListener('toggle', e => {
     if (e.target.open && chartInstance) chartInstance.resize();
 });
+
+// pomiar odległości i powierzchni: punkty klikane na mapie, wyniki liczone na elipsoidzie WGS84
+const measureColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4ade80';
+const measureLayer = L.layerGroup().addTo(map);
+let measureMode = null, measurePoints = [], measureDone = false;
+
+const fmt = (v, digits) => v.toLocaleString('pl-PL', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const formatLength = m => m < 1000 ? fmt(m, 0) + ' m' : fmt(m / 1000, 2) + ' km';
+const formatArea = m2 => m2 < 10000 ? fmt(m2, 0) + ' m²' : m2 < 1e6 ? fmt(m2 / 10000, 2) + ' ha' : fmt(m2 / 1e6, 2) + ' km² (' + fmt(m2 / 10000, 0) + ' ha)';
+
+function pathLength(points, closed) {
+    let sum = 0;
+    for (let i = 1; i < points.length; i++) sum += map.distance(points[i - 1], points[i]);
+    if (closed && points.length > 2) sum += map.distance(points[points.length - 1], points[0]);
+    return sum;
+}
+
+// pole wielokąta na sferze (ta sama formuła co w L.GeometryUtil.geodesicArea)
+function geodesicArea(points) {
+    const R = 6378137, d = Math.PI / 180;
+    let area = 0;
+    for (let i = 0; i < points.length; i++) {
+        const p1 = points[i], p2 = points[(i + 1) % points.length];
+        area += (p2.lng - p1.lng) * d * (2 + Math.sin(p1.lat * d) + Math.sin(p2.lat * d));
+    }
+    return Math.abs(area * R * R / 2);
+}
+
+function drawMeasure(cursor) {
+    const points = cursor ? measurePoints.concat([cursor]) : measurePoints;
+    const isArea = measureMode === 'area';
+    const style = { color: measureColor, weight: 3, interactive: false, dashArray: measureDone ? null : '6 6' };
+    measureLayer.clearLayers();
+    if (isArea && points.length > 2) L.polygon(points, { ...style, fillColor: measureColor, fillOpacity: 0.15 }).addTo(measureLayer);
+    else if (points.length > 1) L.polyline(points, style).addTo(measureLayer);
+    for (const p of measurePoints) L.circleMarker(p, { radius: 4, color: '#082313', weight: 2, fillColor: measureColor, fillOpacity: 1, interactive: false }).addTo(measureLayer);
+
+    let text = '', short = '';
+    if (isArea && points.length > 2) {
+        const area = geodesicArea(points);
+        short = formatArea(area);
+        text = 'Powierzchnia: <strong>' + short + '</strong><br>Obwód: ' + formatLength(pathLength(points, true));
+    } else if (!isArea && points.length > 1) {
+        short = formatLength(pathLength(points, false));
+        text = 'Odległość: <strong>' + short + '</strong><br>Odcinki: ' + (points.length - 1);
+    }
+    if (short && points.length) {
+        L.tooltip({ permanent: true, direction: 'right', offset: [10, 0], className: 'measure-tip' })
+            .setLatLng(points[points.length - 1]).setContent(short).addTo(measureLayer);
+    }
+    const result = document.querySelector('#measureResult');
+    result.hidden = !text;
+    result.innerHTML = text;
+    document.querySelector('#measurePreview').textContent = measureDone ? short : '';
+    document.querySelector('#measureClear').hidden = !measurePoints.length;
+    document.querySelector('#measureFinish').hidden = measureDone || measurePoints.length < (isArea ? 3 : 2);
+}
+
+function clearMeasure() {
+    measurePoints = []; measureDone = false;
+    measureLayer.clearLayers();
+    document.querySelector('#measureResult').hidden = true;
+    document.querySelector('#measurePreview').textContent = '';
+    document.querySelector('#measureClear').hidden = true;
+    document.querySelector('#measureFinish').hidden = true;
+}
+
+function finishMeasure() {
+    // dwuklik dodaje dwa punkty w tym samym miejscu, więc usuwamy powtórzenia
+    measurePoints = measurePoints.filter((p, i, all) =>
+        i === 0 || map.latLngToContainerPoint(p).distanceTo(map.latLngToContainerPoint(all[i - 1])) > 3);
+    if (measurePoints.length < (measureMode === 'area' ? 3 : 2)) return;
+    measureDone = true;
+    drawMeasure();
+}
+
+function setMeasureMode(mode) {
+    measureMode = measureMode === mode ? null : mode;
+    document.querySelector('#measureDistance').setAttribute('aria-pressed', measureMode === 'distance');
+    document.querySelector('#measureArea').setAttribute('aria-pressed', measureMode === 'area');
+    map.getContainer().classList.toggle('measuring', Boolean(measureMode));
+    if (measureMode) map.doubleClickZoom.disable(); else map.doubleClickZoom.enable();
+    clearMeasure();
+}
+
+map.on('click', e => {
+    if (!measureMode) return;
+    if (measureDone) clearMeasure();
+    measurePoints.push(e.latlng);
+    drawMeasure();
+});
+map.on('dblclick', () => { if (measureMode && !measureDone) finishMeasure(); });
+map.on('mousemove', e => { if (measureMode && !measureDone && measurePoints.length) drawMeasure(e.latlng); });
+document.addEventListener('keydown', e => {
+    if (!measureMode || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    if (e.key === 'Enter' && !measureDone) { e.preventDefault(); finishMeasure(); }
+    else if (e.key === 'Escape') clearMeasure();
+    else if (e.key === 'Backspace' && !measureDone && measurePoints.length) { e.preventDefault(); measurePoints.pop(); drawMeasure(); }
+});
+document.querySelector('#measureDistance').addEventListener('click', () => setMeasureMode('distance'));
+document.querySelector('#measureArea').addEventListener('click', () => setMeasureMode('area'));
+document.querySelector('#measureFinish').addEventListener('click', finishMeasure);
+document.querySelector('#measureClear').addEventListener('click', clearMeasure);
 document.querySelector('#singleView').addEventListener('click', () => { comparisonEnabled = false; change(); });
 document.querySelector('#compareView').addEventListener('click', () => { comparisonEnabled = true; change(); });
 document.querySelector('#opacity').addEventListener('input', e => {
