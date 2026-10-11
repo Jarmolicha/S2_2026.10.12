@@ -121,6 +121,17 @@ button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible
 #statsTitle { font-weight: 650; color: var(--text); }
 #stats { padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; line-height: 1.8; }
 #stat-mean, #stat-median { color: var(--accent); font-variant-numeric: tabular-nums; }
+#statsPanel { margin-top: 16px; background: rgba(20, 41, 29, 0.6); border: 1px solid var(--border); border-radius: 12px; }
+#statsPanel summary { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-weight: 650; cursor: pointer; list-style: none; user-select: none; }
+#statsPanel summary::-webkit-details-marker { display: none; }
+#statsPanel summary::before { content: '▸'; color: var(--accent); transition: transform 0.15s; }
+#statsPanel[open] summary::before { transform: rotate(90deg); }
+#statsPanel summary:hover { color: var(--accent-hover); }
+#statsPanel summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 12px; }
+#statsPreview { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+#statsPanel[open] #statsPreview { display: none; }
+.stats-body { padding: 0 12px 12px; }
+.stats-body .note:first-child, .stats-body #statsTitle { margin-top: 0; }
 #reset { width: 100%; margin-top: 16px; color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
 #reset:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 #state { padding: 10px 12px; font-size: 12px; line-height: 1.6; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
@@ -229,14 +240,20 @@ a:hover { color: var(--accent-hover); }
 <div id="legend"><div id="ramp" class="ramp"></div><div class="ticks"><span>−1</span><span>0</span><span>1</span></div></div>
 <div id="classLegend" class="class-legend" hidden></div>
 <div id="explain"></div>
+<details id="statsPanel">
+<summary><span>Statystyki</span><span id="statsPreview"></span></summary>
+<div class="stats-body">
 <div id="statsLayerControls" hidden><label for="statsLayer">Statystyki wskaźnika</label><select id="statsLayer"></select></div>
 <p id="statsTitle" class="note" hidden></p>
 <p id="statsMessage" class="note">Wczytywanie statystyk…</p>
-<div id="stats" style="margin-top: 20px; font-size: 14px;">
-    <strong>Średnia:</strong> <span id="stat-mean">-</span> | 
+<div id="stats" style="font-size: 14px;">
+    <strong>Średnia:</strong> <span id="stat-mean">-</span> |
     <strong>Mediana:</strong> <span id="stat-median">-</span>
 </div>
-<canvas id="indexChart" style="margin-top: 15px; width: 100%; height: 200px;"></canvas><button id="reset">Cały obszar</button><p id="state">Wczytywanie mapy…</p>
+<canvas id="indexChart" style="margin-top: 15px; width: 100%; height: 200px;"></canvas>
+</div>
+</details>
+<button id="reset">Cały obszar</button><p id="state">Wczytywanie mapy…</p>
 <p class="note">Przezroczyste piksele oznaczają brak ważnej obserwacji. Skala kolorów obejmuje −1 do 1. Pełne wartości analityczne zapisano w GeoTIFF.</p>
 <p class="note">Zbliżenie powyżej poziomu 12 powiększa istniejące kafelki. Dane źródłowe mają rozdzielczość 30 m.</p>
 <p class="note">Podkład OpenStreetMap wymaga internetu. Warstwy wynikowe oraz biblioteka mapy są lokalne.</p>
@@ -371,6 +388,9 @@ function updateStatistics() {
     const name = comparisonEnabled ? statsLayer.value : document.querySelector('#layer').value;
     const stats = summaryData && summaryData.indices[name];
     const hasIndex = isIndex(name);
+    // zwinięty panel pokazuje skrót: nazwę wskaźnika i średnią
+    document.querySelector('#statsPanel').hidden = !hasIndex;
+    document.querySelector('#statsPreview').textContent = stats ? name + ' · śr. ' + stats.mean.toFixed(3) : name;
     document.querySelector('#statsTitle').hidden = !hasIndex;
     document.querySelector('#statsTitle').textContent = 'Statystyki ' + name + ' dla całego obszaru';
     document.querySelector('#stats').hidden = !stats;
@@ -518,6 +538,9 @@ document.querySelector('#swapLayers').addEventListener('click', () => {
     change();
 });
 statsLayer.addEventListener('change', updateStatistics);
+document.querySelector('#statsPanel').addEventListener('toggle', e => {
+    if (e.target.open && chartInstance) chartInstance.resize();
+});
 document.querySelector('#singleView').addEventListener('click', () => { comparisonEnabled = false; change(); });
 document.querySelector('#compareView').addEventListener('click', () => { comparisonEnabled = true; change(); });
 document.querySelector('#opacity').addEventListener('input', e => {
