@@ -3,16 +3,30 @@
 <title>Landsat 8 • Kraków i okolice</title><link rel="stylesheet" href="vendor/leaflet.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
+:root {
+  color-scheme: dark;
+  --background: #0a140f;
+  --panel: rgba(12, 26, 18, 0.93);
+  --surface: #14291d;
+  --surface-hover: #203e2b;
+  --text: #eef8f0;
+  --muted: #a9c1b0;
+  --border: rgba(171, 211, 184, 0.2);
+  --accent: #4ade80;
+  --accent-hover: #76eca1;
+  --accent-ink: #082313;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+}
 * { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; margin: 0; }
 body {
   overflow: hidden;
   font: 16px system-ui, sans-serif;
-  color: #173541;
-  background: #f5f7f6;
+  color: var(--text);
+  background: var(--background);
 }
 main { position: relative; width: 100%; height: 100vh; height: 100dvh; }
-#map { position: absolute; inset: 0; width: 100%; height: 100%; background: #e6eceb; }
+#map { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--background); }
 header {
   position: absolute;
   top: 16px;
@@ -20,13 +34,17 @@ header {
   z-index: 1000;
   max-width: calc(100% - 400px);
   padding: 10px 14px;
-  color: white;
-  background: #133e4a;
-  border-radius: 10px;
-  box-shadow: 0 4px 18px rgba(19, 62, 74, 0.18);
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
-h1 { margin: 0 0 4px; font-size: 18px; }
-header p { margin: 0; font-size: 12px; line-height: 1.4; color: #d8e7e8; }
+h1 { margin: 0 0 4px; font-size: 18px; line-height: 1.3; }
+h1::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 9px; border-radius: 50%; background: var(--accent); }
+header p { margin: 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
 aside {
   position: absolute;
   top: 16px;
@@ -37,29 +55,95 @@ aside {
   padding: 20px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  background: rgba(245, 247, 246, 0.96);
-  border: 1px solid rgba(19, 62, 74, 0.15);
-  border-radius: 12px;
-  box-shadow: 0 4px 18px rgba(19, 62, 74, 0.18);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  scrollbar-width: thin;
+  scrollbar-color: #41654f transparent;
 }
-aside h2 { font-size: 18px; margin-top: 0; }
-select, input { width: 100%; margin: 8px 0 20px; }
-label { font-weight: 650; }
-button { padding: 9px 14px; background: #133e4a; color: white; border: 0; border-radius: 4px; cursor: pointer; }
-.ramp { height: 18px; margin-top: 12px; }
-.ticks { display: flex; justify-content: space-between; font-size: 13px; }
-.note { font-size: 13px; line-height: 1.5; color: #45616b; }
-#state { font-size: 14px; line-height: 1.5; }
-a { color: #066776; }
+aside::-webkit-scrollbar { width: 8px; }
+aside::-webkit-scrollbar-thumb { background: #41654f; border: 2px solid transparent; border-radius: 8px; background-clip: padding-box; }
+aside h2 { font-size: 16px; margin: 0 0 18px; }
+label { font-size: 13px; font-weight: 650; }
+select {
+  width: 100%;
+  min-height: 42px;
+  margin: 8px 0 18px;
+  padding: 10px 34px 10px 12px;
+  color: var(--text);
+  background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a9c1b0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  appearance: none;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+select:hover { border-color: rgba(74, 222, 128, 0.55); }
+select option { color: var(--text); background: var(--surface); }
+button {
+  padding: 10px 14px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 150ms, border-color 150ms, color 150ms;
+}
+button:hover { background-color: var(--surface-hover); border-color: rgba(74, 222, 128, 0.55); }
+button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#opacity {
+  --range-fill: 85%;
+  display: block;
+  width: 100%;
+  height: 24px;
+  margin: 8px 0 20px;
+  padding: 0;
+  background: transparent;
+  appearance: none;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+#opacity::-webkit-slider-runnable-track { height: 6px; border-radius: 6px; background: linear-gradient(to right, var(--accent) var(--range-fill), var(--surface-hover) var(--range-fill)); }
+#opacity::-moz-range-track { height: 6px; border-radius: 6px; background: linear-gradient(to right, var(--accent) var(--range-fill), var(--surface-hover) var(--range-fill)); }
+#opacity::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; margin-top: -6px; border: 2px solid var(--accent-ink); border-radius: 50%; background: var(--accent); }
+#opacity::-moz-range-thumb { width: 14px; height: 14px; border: 2px solid var(--accent-ink); border-radius: 50%; background: var(--accent); }
+.ramp { height: 16px; margin-top: 10px; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; }
+.ticks { display: flex; justify-content: space-between; margin-top: 4px; color: var(--muted); font-size: 12px; }
+.note { font-size: 12px; line-height: 1.6; color: var(--muted); }
+#explain { font-size: 13px; line-height: 1.6; color: var(--muted); }
+#statsTitle { font-weight: 650; color: var(--text); }
+#stats { padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; line-height: 1.8; }
+#stat-mean, #stat-median { color: var(--accent); font-variant-numeric: tabular-nums; }
+#reset { width: 100%; margin-top: 16px; color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+#reset:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+#state { padding: 10px 12px; font-size: 12px; line-height: 1.6; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:hover { color: var(--accent-hover); }
 [hidden] { display: none !important; }
-.view-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 18px; }
-.view-switch button { padding: 10px 8px; color: #133e4a; background: #dfe9e7; font: inherit; font-size: 13px; }
-.view-switch button[aria-pressed="true"] { color: white; background: #133e4a; }
-.view-switch button:focus-visible { outline: 2px solid #066776; outline-offset: 2px; }
-#swapLayers { width: 100%; margin-bottom: 8px; font: inherit; font-size: 13px; }
-.layer-legend { margin-bottom: 16px; padding-top: 12px; border-top: 1px solid #d5e0de; font-size: 14px; }
+.view-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 18px; padding: 4px; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border); border-radius: 12px; }
+.view-switch button { min-height: 40px; padding: 9px 6px; color: var(--muted); background: transparent; border-color: transparent; }
+.view-switch button:hover { color: var(--text); background: var(--surface-hover); }
+.view-switch button[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.view-switch button[aria-pressed="true"]:hover { background: var(--accent-hover); }
+#swapLayers { width: 100%; margin-bottom: 8px; }
+.layer-legend { margin-bottom: 12px; padding: 12px; background: rgba(20, 41, 29, 0.6); border: 1px solid var(--border); border-radius: 12px; font-size: 13px; }
 .layer-legend .note { margin-bottom: 0; }
-.class-legend { font-size: 14px; line-height: 1.8; }
+.class-legend { font-size: 13px; line-height: 1.9; }
+.class-legend span { border: 1px solid rgba(255, 255, 255, 0.3); border-radius: 3px; vertical-align: middle; }
+.leaflet-bar, .leaflet-touch .leaflet-bar { overflow: hidden; border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.leaflet-bar a, .leaflet-touch .leaflet-bar a { width: 34px; height: 34px; line-height: 34px; color: var(--text); background: var(--panel); border-bottom-color: var(--border); border-radius: 0; }
+.leaflet-bar a:hover { color: var(--accent); background: var(--surface-hover); }
+.leaflet-bar a:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.leaflet-bar a.leaflet-disabled { color: #6a8373; background: var(--surface); }
+.leaflet-container .leaflet-control-attribution { padding: 4px 8px; color: var(--muted); background: var(--panel); border: 1px solid var(--border); border-bottom: 0; border-radius: 10px 0 0; font-size: 11px; }
+.leaflet-control-attribution a { color: var(--accent); }
 #comparison { position: absolute; inset: 0; z-index: 650; pointer-events: none; }
 #comparisonDivider {
   position: absolute;
@@ -67,16 +151,18 @@ a { color: #066776; }
   bottom: 0;
   left: 50%;
   width: 2px;
-  background: white;
+  background: rgba(238, 248, 240, 0.85);
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
 }
 .comparison-label {
   position: absolute;
   top: 100px;
   padding: 6px 12px;
-  color: white;
-  background: #133e4a;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
   border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
@@ -91,9 +177,9 @@ a { color: #066776; }
   width: 46px;
   height: 46px;
   padding: 0;
-  color: #133e4a;
-  background: #4ade80;
-  border: 2px solid #133e4a;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 2px solid var(--accent-ink);
   border-radius: 50%;
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.25);
   font-size: 26px;
@@ -103,13 +189,15 @@ a { color: #066776; }
   touch-action: none;
   user-select: none;
 }
-#comparisonHandle:focus-visible { outline: 3px solid white; outline-offset: 3px; }
+#comparisonHandle:hover { background: var(--accent-hover); }
+#comparisonHandle:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
 @media (max-width: 700px) {
   header { top: 12px; left: 58px; right: 12px; max-width: none; padding: 10px 12px; }
   h1 { font-size: 16px; }
   header p { font-size: 11px; }
   aside { top: auto; left: 12px; right: 12px; bottom: 32px; width: auto; max-height: 38vh; max-height: 38dvh; padding: 16px; }
 }
+@media (prefers-reduced-motion: reduce) { button { transition: none; } }
 </style></head><body><header><h1>Landsat 8: Kraków i okolice</h1><p>7 sierpnia 2013 • wskaźniki pokrycia terenu • laboratorium geoinformatyki</p></header>
 <main><div id="map" aria-label="Interaktywna mapa wskaźników"></div>
 <div id="comparison" hidden>
@@ -238,13 +326,20 @@ function configureStatistics() {
 }
 
 const ctx = document.getElementById('indexChart').getContext('2d');
+const theme = getComputedStyle(document.documentElement);
+const chartAccent = theme.getPropertyValue('--accent').trim();
+const chartText = theme.getPropertyValue('--muted').trim();
+const chartGrid = theme.getPropertyValue('--border').trim();
 if (typeof Chart !== 'undefined') chartInstance = new Chart(ctx, {
     type: 'bar',
-    data: { labels: [], datasets: [{ label: 'Ilość pikseli', data: [], backgroundColor: '#133e4a' }] },
+    data: { labels: [], datasets: [{ label: 'Ilość pikseli', data: [], backgroundColor: chartAccent }] },
     options: {
         responsive: true,
         plugins: { legend: { display: false } },
-        scales: { x: { title: { display: true, text: 'Wartość' } }, y: { display: false } }
+        scales: {
+            x: { title: { display: true, text: 'Wartość', color: chartText }, ticks: { color: chartText }, grid: { color: chartGrid } },
+            y: { display: false }
+        }
     }
 });
 
@@ -425,7 +520,11 @@ document.querySelector('#swapLayers').addEventListener('click', () => {
 statsLayer.addEventListener('change', updateStatistics);
 document.querySelector('#singleView').addEventListener('click', () => { comparisonEnabled = false; change(); });
 document.querySelector('#compareView').addEventListener('click', () => { comparisonEnabled = true; change(); });
-document.querySelector('#opacity').addEventListener('input', e => activeLayers.forEach(layer => layer.setOpacity(Number(e.target.value))));
+document.querySelector('#opacity').addEventListener('input', e => {
+    const opacity = Number(e.target.value);
+    e.target.style.setProperty('--range-fill', (opacity * 100) + '%');
+    activeLayers.forEach(layer => layer.setOpacity(opacity));
+});
 document.querySelector('#reset').addEventListener('click', fitArea);
 map.on('move zoom resize', updateComparison);
 change();
