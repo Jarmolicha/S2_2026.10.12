@@ -24,6 +24,11 @@ ROOT = Path(__file__).resolve().parents[1]
 INDEX_BANDS = {'NDVI': (5, 4), 'NDBI': (6, 5), 'MNDWI': (3, 6)}
 CMAPS = {'NDVI': 'RdYlGn', 'NDBI': 'PuOr_r', 'MNDWI': 'BrBG'}
 NS = {'e': 'http://espa.cr.usgs.gov/v2'}
+# Progi do klasyfikacji pokrycia terenu
+THRESHOLDS = {'MNDWI': 0.0, 'NDVI': 0.3, 'NDBI': 0.0}
+# Klasy: (kod, nazwa, kolor)
+CLASSES = [(0, 'Inne', '#d9c9a3'), (1, 'Woda', '#2b7bba'), (2, 'Roślinność', '#3a9a3f'), (3, 'Zabudowa / odsłonięta gleba', '#c8473b')]
+CLASS_NODATA = 255
 
 
 def read_metadata(scene: Path) -> dict:
@@ -108,6 +113,42 @@ def normalized_difference(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 def calculate_indices(reflectance: dict) -> dict:
     return {name: normalized_difference(reflectance[a], reflectance[b]) for name, (a, b) in INDEX_BANDS.items()}
+
+
+def classify_land_cover(indices: dict, thresholds: dict = THRESHOLDS) -> np.ndarray:
+    """Klasyfikacja progowa. Kolejne linie nadpisują poprzednie, więc woda ma pierwszeństwo."""
+    ndvi = indices['NDVI']
+    ndbi = indices['NDBI']
+    mndwi = indices['MNDWI']
+    valid = np.isfinite(ndvi) & np.isfinite(ndbi) & np.isfinite(mndwi)
+    classes = np.full(ndvi.shape, CLASS_NODATA, dtype='uint8')
+    classes[valid] = 0                                    # inne
+    classes[valid & (ndbi > thresholds['NDBI'])] = 3      # zabudowa
+    classes[valid & (ndvi > thresholds['NDVI'])] = 2      # roślinność
+    classes[valid & (mndwi > thresholds['MNDWI'])] = 1    # woda
+    return classes
+
+
+def class_stats(classes: np.ndarray) -> list:
+    """Liczba pikseli i procent każdej klasy."""
+    total = np.sum(classes != CLASS_NODATA)
+    stats = []
+    for code, name, color in CLASSES:
+        pixels = int(np.sum(classes == code))
+        percent = round(100 * pixels / total, 2)
+        stats.append({'code': code, 'name': name, 'color': color, 'pixels': pixels, 'percent': percent})
+    return stats
+
+
+def class_rgba(classes: np.ndarray) -> np.ndarray:
+    """Kolorowy obraz klas do kafelków mapy."""
+    rgba = np.zeros((classes.shape[0], classes.shape[1], 4), dtype='uint8')
+    for code, name, color in CLASSES:
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
+        rgba[classes == code] = [r, g, b, 255]
+    return rgba
 
 
 def stretch_rgb(reflectance: dict) -> np.ndarray:
